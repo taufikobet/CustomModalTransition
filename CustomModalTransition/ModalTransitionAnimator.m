@@ -8,15 +8,17 @@
 
 #import "ModalTransitionAnimator.h"
 
+static CGFloat kModalScreenOffset = 40.0f;
+
 @implementation ModalTransitionAnimator
 
 - (NSTimeInterval)transitionDuration:(id<UIViewControllerContextTransitioning>)transitionContext {
-    return 0.6;
+    return 0.4;
 }
 
 - (void)animateTransition:(id<UIViewControllerContextTransitioning>)transitionContext {
     UIViewController* destination = [transitionContext viewControllerForKey:UITransitionContextToViewControllerKey];
-    
+
     if([destination isBeingPresented]) {
         [self animatePresentation:transitionContext];
     } else {
@@ -30,14 +32,16 @@
 //
 - (CGRect)presentingControllerFrameWithContext:(id<UIViewControllerContextTransitioning>)transitionContext {
     CGRect frame = transitionContext.containerView.bounds;
-    
+
     if(floor(NSFoundationVersionNumber) > NSFoundationVersionNumber_iOS_7_1) // iOS 8+
     {
         //
         // On iOS 8, UIKit handles rotation using transform matrix
         // Therefore we should always return a frame for portrait mode
         //
-        return CGRectMake(0, CGRectGetHeight(frame), CGRectGetWidth(frame), CGRectGetHeight(frame));
+        CGRect rect = CGRectMake(0, 0, CGRectGetWidth(frame), CGRectGetHeight(frame));
+        NSLog(@"transition context frame: %@", NSStringFromCGRect(rect));
+        return rect;
     }
     else
     {
@@ -47,7 +51,7 @@
         // fix the frame accoding to interface orientation.
         //
         UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
-        
+
         switch (orientation) {
             case UIInterfaceOrientationLandscapeLeft:
                 return CGRectMake(CGRectGetWidth(frame), 0, CGRectGetWidth(frame), CGRectGetHeight(frame));
@@ -72,45 +76,46 @@
     UIViewController* source = [transitionContext viewControllerForKey:UITransitionContextFromViewControllerKey];
     UIViewController* destination = [transitionContext viewControllerForKey:UITransitionContextToViewControllerKey];
     UIView* container = transitionContext.containerView;
-    
+
     // Orientation bug fix
     // See: http://stackoverflow.com/a/20061872/351305
     destination.view.frame = container.bounds;
+    CGRect destinationFrame = CGRectMake(container.bounds.origin.x, CGRectGetHeight(container.bounds), container.bounds.size.width, container.bounds.size.height);
+
+    destination.view.frame = destinationFrame;
     source.view.frame = container.bounds;
-    
+
     // Place container view before source view
-    [container.superview sendSubviewToBack:container];
-    
+    //[container.superview sendSubviewToBack:container];
+
     // Add destination view to container
     [container addSubview:destination.view];
-    
-    // Move destination snapshot back in Z plane
-    // Important: original transform3d is different from CATransform3DIdentity
-    CATransform3D originalTransform = destination.view.layer.transform;
-    
-    // Apply custom transform
-    CATransform3D perspectiveTransform = originalTransform;
-    perspectiveTransform.m34 = 1.0 / -1000.0;
-    perspectiveTransform = CATransform3DTranslate(perspectiveTransform, 0, 0, -100);
-    destination.view.layer.transform = perspectiveTransform;
-    
+
     // Start appearance transition for source controller
     // Because UIKit does not do this automatically
     [source beginAppearanceTransition:NO animated:YES];
-    
+
     // Animate
     [UIView animateKeyframesWithDuration:transitionDuration delay:0.0
                                  options:UIViewKeyframeAnimationOptionCalculationModeCubic animations:^{
                                      [UIView addKeyframeWithRelativeStartTime:0.0 relativeDuration:1.0 animations:^{
-                                         source.view.frame = [self presentingControllerFrameWithContext:transitionContext];
+                                         CGRect targetFrame = [self presentingControllerFrameWithContext:transitionContext];
+                                         destination.view.frame = CGRectMake(0, 0 + kModalScreenOffset, targetFrame.size.width, targetFrame.size.height);
                                      }];
                                      [UIView addKeyframeWithRelativeStartTime:0.2 relativeDuration:0.8 animations:^{
-                                         destination.view.layer.transform = originalTransform;
+
+                                         source.view.alpha = 0.5f;
+
+                                         CATransform3D perspectiveTransform = source.view.layer.transform;
+                                         perspectiveTransform.m34 = 1.0 / -1000.0;
+                                         perspectiveTransform = CATransform3DTranslate(perspectiveTransform, 0, 0, -100);
+                                         source.view.layer.transform = perspectiveTransform;
                                      }];
                                  } completion:^(BOOL finished) {
                                      // End appearance transition for source controller
+
                                      [source endAppearanceTransition];
-                                     
+
                                      // Finish transition
                                      [transitionContext completeTransition:YES];
                                  }];
@@ -119,40 +124,36 @@
 - (void)animateDismissal:(id<UIViewControllerContextTransitioning>)transitionContext
 {
     NSTimeInterval transitionDuration = [self transitionDuration:transitionContext];
-    UIViewController* source = [transitionContext viewControllerForKey:UITransitionContextFromViewControllerKey];
-    UIViewController* destination = [transitionContext viewControllerForKey:UITransitionContextToViewControllerKey];
-    UIView* container = transitionContext.containerView;
-    
+    UIViewController *source = [transitionContext viewControllerForKey:UITransitionContextFromViewControllerKey];
+    UIViewController *destination = [transitionContext viewControllerForKey:UITransitionContextToViewControllerKey];
+    UIView *container = transitionContext.containerView;
+
     // Orientation bug fix
     // See: http://stackoverflow.com/a/20061872/351305
     destination.view.frame = container.bounds;
-    source.view.frame = container.bounds;
-
+    source.view.frame = CGRectMake(0, kModalScreenOffset, container.bounds.size.width, container.bounds.size.height);
     // Move destination view below source view
     destination.view.frame = [self presentingControllerFrameWithContext:transitionContext];
-    
+
     // Start appearance transition for destination controller
     // Because UIKit does not do this automatically
     [destination beginAppearanceTransition:YES animated:YES];
-    
     // Animate
     [UIView animateKeyframesWithDuration:transitionDuration delay:0.0
                                  options:UIViewKeyframeAnimationOptionCalculationModeCubic animations:^{
                                      [UIView addKeyframeWithRelativeStartTime:0.0 relativeDuration:1.0 animations:^{
-                                         destination.view.frame = container.bounds;
+                                         //destination.view.frame = container.bounds;
                                      }];
                                      [UIView addKeyframeWithRelativeStartTime:0.0 relativeDuration:1.0 animations:^{
                                          // Important: original transform3d is different from CATransform3DIdentity
-                                         CATransform3D perspectiveTransform = source.view.layer.transform;
-                                         
-                                         perspectiveTransform.m34 = 1.0 / -1000.0;
-                                         perspectiveTransform = CATransform3DTranslate(perspectiveTransform, 0, 0, -100);
-                                         source.view.layer.transform = perspectiveTransform;
+                                         destination.view.alpha = 1.0f;
+                                         destination.view.layer.transform = CATransform3DIdentity;
+                                         source.view.frame = CGRectMake(0, container.bounds.size.height, container.bounds.size.width, container.bounds.size.height);
                                      }];
                                  } completion:^(BOOL finished) {
                                      // End appearance transition for destination controller
                                      [destination endAppearanceTransition];
-                                     
+
                                      // Finish transition
                                      [transitionContext completeTransition:YES];
                                  }];
